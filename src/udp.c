@@ -256,6 +256,57 @@ int udp_sendto_self(socket_t sock, const char *data, size_t size) {
 #endif
 }
 
+int udp_sendto_dscp(socket_t sock, const char *data, size_t size, const addr_record_t *dst,
+                    int ds) {
+#ifndef __linux__
+#error "Not Implemented"
+#else
+	addr_record_t tmp = *dst;
+	addr_record_t name;
+	name.len = sizeof(name.addr);
+	if (getsockname(sock, (struct sockaddr *)&name.addr, &name.len) == 0) {
+		if (name.addr.ss_family == AF_INET6)
+			addr_map_inet6_v4mapped(&tmp.addr, &tmp.len);
+	} else {
+		JLOG_WARN("getsockname failed, errno=%d", sockerrno);
+	}
+
+	struct iovec iov;
+	iov.iov_base = (void *)data;
+	iov.iov_len = size;
+
+	char cbuf[CMSG_SPACE(sizeof(ds)) + CMSG_SPACE(sizeof(ds))];
+	memset(cbuf, 0, sizeof(cbuf));
+
+	struct msghdr msg;
+	msg.msg_name = &tmp.addr;
+	msg.msg_namelen = tmp.len;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_flags = 0;
+
+	msg.msg_control = cbuf;
+	msg.msg_controllen = sizeof(cbuf);
+
+	struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+	int cmsg_len = sizeof(ds);
+
+	cmsg->cmsg_level = IPPROTO_IP;
+	cmsg->cmsg_type = IP_TOS;
+	cmsg->cmsg_len = CMSG_LEN(cmsg_len);
+	*(int *)CMSG_DATA(cmsg) = ds;
+
+	cmsg = CMSG_NXTHDR(&msg, cmsg);
+
+	cmsg->cmsg_level = IPPROTO_IPV6;
+	cmsg->cmsg_type = IPV6_TCLASS;
+	cmsg->cmsg_len = CMSG_LEN(cmsg_len);
+	*(int *)CMSG_DATA(cmsg) = ds;
+
+	return sendmsg(sock, &msg, 0);
+#endif
+}
+
 int udp_set_diffserv(socket_t sock, int ds) {
 #ifdef _WIN32
 	// IP_TOS has been intentionally broken on Windows in favor of a convoluted proprietary
