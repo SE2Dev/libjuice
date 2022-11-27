@@ -258,7 +258,7 @@ int udp_sendto_self(socket_t sock, const char *data, size_t size) {
 
 int udp_sendto_dscp(socket_t sock, const char *data, size_t size, const addr_record_t *dst,
                     int ds) {
-#ifndef __linux__
+#ifdef _WIN32
 #error "Not Implemented"
 #else
 	addr_record_t tmp = *dst;
